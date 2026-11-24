@@ -1,0 +1,68 @@
+name: Smoke tests
+
+# Manual only. Three jobs run the same three checks against the same site.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-comparison
+  cancel-in-progress: false
+
+jobs:
+  tinybrowser:
+    name: TinyBrowser (no browser on the runner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: node:22-bookworm-slim
+    steps:
+      - uses: actions/checkout@v6
+      - name: Where is this runner
+        run: node -e "fetch('https://www.cloudflare.com/cdn-cgi/trace').then(r=>r.text()).then(t=>console.log(t.split('\n').filter(l=>/^(loc|colo)=/.test(l)).join(' ')))"
+      - name: Install packages
+        run: npm ci --no-audit --no-fund
+      - name: Run smoke tests
+        run: npx playwright test
+        env:
+          TINYFISH_API_KEY: ${{ secrets.TINYFISH_API_KEY }}
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: tinybrowser-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  local-install:
+    name: Local Chromium (installed on the runner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: node:22-bookworm-slim
+    steps:
+      - uses: actions/checkout@v6
+      - name: Where is this runner
+        run: node -e "fetch('https://www.cloudflare.com/cdn-cgi/trace').then(r=>r.text()).then(t=>console.log(t.split('\n').filter(l=>/^(loc|colo)=/.test(l)).join(' ')))"
+      - name: Install packages
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium and its system packages
+        run: npx playwright install --with-deps chromium
+      - name: Run smoke tests
+        run: npx playwright test
+        env:
+          BROWSER: local
+
+  local-image:
+    name: Local Chromium (Playwright's image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: mcr.microsoft.com/playwright:v1.65.1-noble
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install packages
+        run: npm ci --no-audit --no-fund
+      - name: Run smoke tests
+        run: npx playwright test
+        env:
+          BROWSER: local
